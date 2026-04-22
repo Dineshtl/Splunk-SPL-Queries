@@ -26,7 +26,7 @@
 ## 1️⃣ Port Scanning Detection
 
 ```spl
-index=* sourcetype=firewall
+index=main sourcetype=fortigate_traffic
 | stats dc(dest_port) as unique_ports by src_ip
 | where unique_ports > 20
 | sort -unique_ports
@@ -34,13 +34,23 @@ index=* sourcetype=firewall
 **Use Case:** Detects IPs scanning multiple ports
 **Threat:** Reconnaissance / Network Scanning
 **MITRE ATT&CK:** T1046 — Network Service Scanning
+<img width="1909" height="908" alt="Screenshot 2026-04-22 170511" src="https://github.com/user-attachments/assets/841418d5-03fa-4ed7-8018-95295fdfbe00" />
+
+### 🚨 Investigation Finding — Port Scanning:
+- **Most Aggressive IP:** 79.124.62.122 — 1137 ports
+- **Total Events:** 692,068
+- **Internal Scanner:** 192.168.0.3 — 57 ports
+- **Suspicious:** 8.8.8.8 (Google DNS) — 52 ports
+- **Verdict: 🔴 TRUE POSITIVE — Active Port Scanning**
+- **Action: Block external IPs + Investigate 
+  internal IP 192.168.0.3 immediately**
 
 ---
 
 ## 2️⃣ High Firewall Deny Connections — DDoS
 
 ```spl
-index=* sourcetype=firewall action=blocked
+index=main sourcetype=fortigate_traffic action=blocked
 | stats count as denied by src_ip
 | where denied > 100
 | sort -denied
@@ -48,26 +58,41 @@ index=* sourcetype=firewall action=blocked
 **Use Case:** Detects IPs with excessive denied connections
 **Threat:** DDoS Attack / Brute Force
 **MITRE ATT&CK:** T1498 — Network Denial of Service
+<img width="1911" height="913" alt="image" src="https://github.com/user-attachments/assets/3daba6b2-6341-4b36-835e-6eaff6cfe8a7" />
 
+### 🚨 Investigation Finding — DDoS/Firewall Deny:
+- **Top Attacker:** 79.124.62.122 — 4,426 denials
+- **Second Attacker:** 165.154.102.253 — 3,600 denials
+- **Suspicious Internal IPs:**
+  - 192.168.0.125 — 2,825 denials
+  - 192.168.0.24 — 1,980 denials
+  - 192.168.0.127 — 1,003 denials
+- **Total Events:** 33,396
+- **Verdict: 🔴 TRUE POSITIVE — Active DDoS Attack
+  + Possible compromised internal machines**
+- **Action: Block external IPs + Isolate internal 
+  machines for investigation**
 ---
 
 ## 3️⃣ VPN Login Activity
 
 ```spl
-index=* sourcetype=vpn
+index=main sourcetype=fortigate_traffic
 | stats count by user, action, src_ip
 | sort -count
 ```
 **Use Case:** Monitors all VPN login activity
 **Threat:** Unauthorized Access
 **MITRE ATT&CK:** T1133 — External Remote Services
+<img width="1909" height="785" alt="image" src="https://github.com/user-attachments/assets/9ec7286a-3547-4831-b67c-74082298cbee" />
+
 
 ---
 
 ## 4️⃣ Failed VPN Logins
 
 ```spl
-index=* sourcetype=vpn action=failed
+index=main sourcetype=fortigate_traffic action=failed
 | stats count by user, src_ip
 | sort -count
 ```
@@ -80,7 +105,7 @@ index=* sourcetype=vpn action=failed
 ## 5️⃣ Traffic Towards Well Known Ports
 
 ```spl
-index=* sourcetype=firewall
+index=main sourcetype=fortigate_traffic
 | where dest_port IN (22, 23, 80, 443, 3389, 445, 21)
 | stats count by dest_port, src_ip
 | sort -count
@@ -94,7 +119,7 @@ index=* sourcetype=firewall
 ## 6️⃣ Suspicious Authentication Activity
 
 ```spl
-index=* sourcetype=firewall OR sourcetype=vpn
+index=main sourcetype=fortigate_traffic
 | stats count as attempts by user, src_ip
 | where attempts > 10
 | sort -attempts
@@ -108,7 +133,7 @@ index=* sourcetype=firewall OR sourcetype=vpn
 ## 7️⃣ Top Blocked Source IPs
 
 ```spl
-index=* sourcetype=firewall action=blocked
+index=main sourcetype=fortigate_traffic action=blocked
 | stats count by src_ip
 | sort -count
 | head 10
@@ -122,7 +147,7 @@ index=* sourcetype=firewall action=blocked
 ## 8️⃣ Network Traffic Over Time
 
 ```spl
-index=* sourcetype=firewall
+index=main sourcetype=fortigate_traffic
 | timechart count by action
 ```
 **Use Case:** Visualizes traffic trends over time
