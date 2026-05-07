@@ -233,7 +233,9 @@ index=main sourcetype=fortigate_traffic
 | VPN Login from 152.57.237.86 | 🟢 Low | Network |
 
 ### 📸 Dashboard Screenshot:
-[Add your dashboard screenshot here]
+![Splunk ES Security Posture Dashboard](splunk-es-security-posture-dashboard.png)
+<img width="1887" height="892" alt="splunk-es-security-posture-dashboard png" src="https://github.com/user-attachments/assets/f7253e23-cc4e-44d4-b383-632962b3b4ec" />
+
 
 ---
 
