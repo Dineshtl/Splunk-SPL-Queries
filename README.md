@@ -1,206 +1,160 @@
-# CrowdStrike Falcon EDR — Threat Investigation & Active Response
+🔍 SPL Queries — Splunk Enterprise Security
+Collection of SPL queries used for threat detection and investigation in Splunk Enterprise Security lab. Author: Thumma Lakshmikanth Gari Dinesh Role: Junior SOC Analyst Tool: Splunk Enterprise Security (ES)
 
-**Author:** Thumma Lakshmikanth Gari Dinesh  
-**Role:** SOC Analyst (Tier 1)  
-**Tool:** CrowdStrike Falcon EDR  
+📋 Query Index
+#	Query Name	Use Case
+1	Port Scanning Detection	Reconnaissance
+2	High Firewall Deny Connections	DDoS Detection
+3	VPN Login Activity	Access Monitoring
+4	Failed VPN Logins	Brute Force
+5	Traffic to Well Known Ports	Exploitation
+6	Suspicious Authentication	Credential Attack
+7	Top Blocked Source IPs	Threat Detection
+8	Network Traffic Over Time	SOC Dashboard
+1️⃣ Port Scanning Detection
+index=main sourcetype=fortigate_traffic
+| stats dc(dest_port) as unique_ports by src_ip
+| where unique_ports > 20
+| sort -unique_ports
+Use Case: Detects IPs scanning multiple ports Threat: Reconnaissance / Network Scanning MITRE ATT&CK: T1046 — Network Service Scanning Screenshot 2026-04-22 170511
 
----
+🚨 Investigation Finding — Port Scanning:
+Most Aggressive IP: 79.124.62.122 — 1137 ports
+Total Events: 692,068
+Internal Scanner: 192.168.0.3 — 57 ports
+Suspicious: 8.8.8.8 (Google DNS) — 52 ports
+Verdict: 🔴 TRUE POSITIVE — Active Port Scanning
+Action: Block external IPs + Investigate internal IP 192.168.0.3 immediately
+2️⃣ High Firewall Deny Connections — DDoS
+index=main sourcetype=fortigate_traffic action=blocked
+| stats count as denied by src_ip
+| where denied > 100
+| sort -denied
+Use Case: Detects IPs with excessive denied connections Threat: DDoS Attack / Brute Force MITRE ATT&CK: T1498 — Network Denial of Service image
 
-## Investigation 1 — ChaosRansomwareV4 Ransomware Detection & Containment
+🚨 Investigation Finding — DDoS/Firewall Deny:
+Top Attacker: 79.124.62.122 — 4,426 denials
+Second Attacker: 165.154.102.253 — 3,600 denials
+Suspicious Internal IPs:
+192.168.0.125 — 2,825 denials
+192.168.0.24 — 1,980 denials
+192.168.0.127 — 1,003 denials
+Total Events: 33,396
+**Verdict: 🔴 TRUE POSITIVE — Active DDoS Attack
+Possible compromised internal machines**
+Action: Block external IPs + Isolate internal machines for investigation
+3️⃣ VPN Login Activity
+index=main sourcetype=fortigate_traffic
+| stats count by user, action, src_ip
+| sort -count
+Use Case: Monitors all VPN login activity Threat: Unauthorized Access MITRE ATT&CK: T1133 — External Remote Services image
 
-### Incident Overview
+⚠️ Investigation Finding — VPN/User Activity:
+Suspicious User: jan2025
+Source IP: 10.212.134.201
+Allowed: 247 connections
+Blocked: 210 connections
+Verdict: ⚠️ SUSPICIOUS — High blocked to allowed ratio needs investigation
+Action: Investigate jan2025 user activity + Check if IP is authorized
+4️⃣ Failed VPN Logins
+index=main sourcetype=fortigate_traffic action=failure
+| stats count by user, src_ip
+| sort -count
+Use Case: Detects failed VPN login attempts Threat: Brute Force / Credential Stuffing MITRE ATT&CK: T1110 — Brute Force Screenshot 2026-04-23 114713
 
-| Field | Details |
-|---|---|
-| **Date** | June 7, 2026 |
-| **Analyst** | Thumma Lakshmikanth Gari Dinesh |
-| **Severity** | 🔴 Critical |
-| **Host** | HACKBOOK (Windows 11 Workstation) |
-| **Verdict** | True Positive |
-| **Status** | Contained |
+🚨 Investigation Finding — Suspicious Auth/Botnet:
+Attack Type: Coordinated Botnet Attack
+Target Account: admin
+Attacking Subnet: 85.11.187.x (multiple IPs)
+Attempts per IP: ~990 each
+Total Events: 98,538
+Pattern: Same subnet, same target, same attempt count = Automated botnet
+Verdict: 🔴 TRUE POSITIVE — CRITICAL Botnet Credential Stuffing Attack on admin account
+Action: Block entire 85.11.187.0/24 subnet + Lock admin account + Escalate to L2 immediately
+5️⃣ Traffic Towards Well Known Ports
+index=main sourcetype=fortigate_traffic
+| where dest_port IN (22, 23, 80, 443, 3389, 445, 21)
+| stats count by dest_port, src_ip
+| sort -count
+Use Case: Monitors traffic to sensitive ports Threat: Service Exploitation MITRE ATT&CK: T1021 — Remote Services image
 
----
+🚨 Investigation Finding — Well Known Ports:
+Most Targeted Port: 443 (HTTPS)
+Critical Internal IP: 192.168.0.3 — 31,085 hits
+Botnet IPs Reappearing: 85.11.187.x subnet
+Total Events: 47,306
+Verdict: 🔴 TRUE POSITIVE
+Internal machine 192.168.0.3 possibly compromised
+Botnet targeting HTTPS services
+Action: Isolate 192.168.0.3 + Block 85.11.187.0/24 subnet + Investigate HTTPS service
+6️⃣ Suspicious Authentication Activity
+index=main sourcetype=fortigate_traffic protocol_version=ipv4
+| stats count as attempts by src_ip
+| where attempts > 10
+| sort -attempts
+Use Case: Detects suspicious authentication patterns Threat: Credential Attack / Insider Threat MITRE ATT&CK: T1078 — Valid Accounts Screenshot 2026-04-23 115501
 
-### Step 1 — Alert Detection
+🚨 Investigation Finding — Suspicious Auth:
+Most Suspicious: 192.168.0.24 — 101,431 attempts
+Second: 192.168.0.3 — 28,752 attempts
+Persistent Attacker: 79.124.62.122 (seen in all queries!)
+Total Events: 143,673
+Verdict: 🔴 TRUE POSITIVE — CRITICAL
+Multiple internal machines compromised
+Persistent external attacker identified
+Possible lateral movement in progress
+**Action:
+Isolate 192.168.0.24 immediately
+Block 79.124.62.122 on all firewalls
+Initiate full incident response
+Escalate to L2/L3 immediately**
+7️⃣ Top Blocked Source IPs
+index=main sourcetype=fortigate_traffic action=blocked
+| stats count by src_ip
+| sort -count
+| head 10
+Use Case: Identifies most aggressive attacking IPs Threat: Active Attack Campaign MITRE ATT&CK: T1595 — Active Scanning image
 
-While monitoring the CrowdStrike Falcon Activity Dashboard, 
-a Critical severity alert was identified in the 
-Endpoint Detections queue. The alert showed 75 total 
-detections with a Critical priority detection on host 
-HACKBOOK detected at 09:25:17 on June 7, 2026.
+🔴 Investigation Finding — Top Blocked IPs:
+Most Blocked: 77.90.185.43 — 11,841 times
+Persistent Attacker: 79.124.62.122 — 4,268 (appeared in 4 queries!)
+Compromised Internal IPs:
+192.168.0.125 — 2,768 blocks
+192.168.0.24 — 1,712 blocks
+192.168.0.127 — 989 blocks
+Total Events: 41,267
+Verdict: 🔴 TRUE POSITIVE
+Action: Block 77.90.185.43 + 79.124.62.122 permanently + Isolate internal machines
+8️⃣ Network Traffic Over Time
+index=main sourcetype=fortigate_traffic
+| timechart span=1h count by action
+Use Case: Visualizes traffic trends over time Threat: Anomaly Detection MITRE ATT&CK: T1040 — Network Sniffing Screenshot 2026-04-23 120714
 
-The triggering filename was **Office 2019.exe.exe** — 
-immediately suspicious due to the double .exe.exe extension, 
-a classic masquerading technique where malware disguises 
-itself as a legitimate application.
+📊 Network Traffic Analysis — 24 Hours:
+Total Events: 2,390,839
+Allowed Traffic: ~100,000/hour (normal baseline)
+Blocked Traffic: ~1,900/hour (consistent attack)
+Peak Attack Time: 16:00-17:00 (highest blocked)
+Verdict: Network under continuous attack but firewall blocking effectively
+🚨 Incident Review Dashboard
+Splunk Enterprise Security Incident Review showing 3191 Notable Events in last 24 hours
 
-**Detection Details:**
-- Filename: Office 2019.exe.exe
-- Severity: Critical
-- Source: On-demand scan
-- Tactic: Custom Intelligence via Indicator of Compromise
-- Technique ID: CST0005
-- IOA Name: IOCPolicySHA256Critical
-- Assigned to: Thumma Dinesh
+Active Alerts Detected:
+Alert	Urgency	Domain
+Port Scanning Detection	🟡 Medium	Network
+High Firewall DENY — DDoS	🟡 Medium	Network
+Suspicious Auth — Arcsight3	🟡 Medium	Endpoint
+Suspicious Auth — ANONYMOUS LOGON	🟡 Medium	Endpoint
+VPN Login from 152.57.237.86	🟢 Low	Network
+📸 Dashboard Screenshot:
+Splunk ES Security Posture Dashboard splunk-es-security-posture-dashboard png
 
-![Detections List](01-detections-list.png)
-![Detection Detail](02-detection-detail.png)
-
----
-
-### Step 2 — Hash Analysis & Threat Intelligence
-
-The SHA256 hash of the file was extracted and analyzed 
-using Falcon's built-in threat intelligence:
-
-**SHA256:** 
-954d8fcd6b74d76999f9ec033ca855ffdab6595be23039f03bc4c6017fa3932c
-
-**Activity Tab findings:**
-- External prevalence: Low — file rarely seen globally
-- Internal prevalence: Low — limited spread inside network
-- Hosts affected: 2
-- Detections: 2
-- Last seen: June 7, 2026 10:12:30
-- Hash action: Block — Falcon actively blocking this hash
-
-Low external prevalence is a strong malware indicator — 
-legitimate software like Microsoft Office has very high 
-global prevalence. A rare executable masquerading as 
-Office is highly suspicious.
-
-![Hash Activity](03-hash-activity.png)
-
-**Intelligence Tab findings:**
-
-The Intelligence tab delivered the critical finding —
-the SHA256 hash was positively matched to the 
-**ChaosRansomwareV4** malware family. This is a known 
-ransomware strain capable of file encryption, backup 
-destruction, and lateral movement across networks.
-
-- Malware Family: ChaosRansomwareV4
-- File size: 0 Bytes — hollow/packed file, common evasion
-- Last updated: June 7, 2026 11:05:24
-
-**Verdict at this stage: 🔴 TRUE POSITIVE — 
-Ransomware confirmed on host HACKBOOK**
-
-![Hash Intelligence](04-hash-intelligence-chaosransomware.png)
-
----
-
-### Step 3 — Scan Results Review
-
-On-demand scan results were reviewed to understand 
-the full scope of the infection:
-
-- Hosts with detections: 1 (HACKBOOK)
-- Files scanned: 4
-- Files traversed: 98
-- **0/2 files quarantined** ⚠️ — malicious files still 
-active on host
-- Containment status: Normal — host not yet isolated
-- Scan initiated by: arvind@siemxpert.com
-
-The fact that 0 files were quarantined confirmed that 
-the ransomware was still active and uncontained on 
-HACKBOOK — requiring immediate response action.
-
-![Scan Results](05-scan-results.png)
-
----
-
-### Step 4 — Active Response & Containment
-
-Given the confirmed ransomware identification and active 
-threat status, the following response actions were 
-immediately executed:
-
-**Action 1 — Network Containment**
-Network containment was initiated on host HACKBOOK via 
-Falcon's containment feature. This isolates the host 
-from all network communication — preventing ransomware 
-from spreading laterally to other endpoints or encrypting 
-network shares.
-
-- Network containment status: Containment pending ✅
-- Host status: Offline ✅
-- Host successfully isolated from network
-
-![Network Containment](06-network-containment-pending.png)
-
-**Action 2 — RTR Attempted**
-Real Time Response (RTR) session was attempted to connect 
-to HACKBOOK for live process investigation and malicious 
-process termination. However, RTR was not possible as 
-the host was offline following network containment — 
-which is expected and correct SOC procedure. 
-Containment always takes priority over live forensics 
-to prevent further spread.
-
-**Action 3 — Credential Disabling**
-As an additional mitigation, HACKBOOK machine credentials 
-were disabled to prevent any unauthorized access attempts 
-using compromised credentials from the infected host — 
-even in the event of partial network access.
-
----
-
-### Step 5 — Escalation
-
-Following containment and credential disabling, the 
-incident was documented and escalated to L2 analyst 
-for:
-- Full forensic analysis of HACKBOOK
-- Recovery and restoration procedures
-- Investigation of the second affected host
-- Root cause analysis of initial infection vector
-
----
-
-### MITRE ATT&CK Mapping
-
-| Tactic | Technique ID | Technique | Evidence |
-|---|---|---|---|
-| Defense Evasion | T1036 | Masquerading | Double .exe.exe extension |
-| Impact | T1486 | Data Encrypted for Impact | ChaosRansomwareV4 family |
-| Initial Access | T1566 | Phishing | Likely delivery method |
-
----
-
-### Conclusion
-
-A Critical ransomware alert was detected on host HACKBOOK 
-via CrowdStrike Falcon EDR on June 7, 2026. The file 
-Office 2019.exe.exe was confirmed as ChaosRansomwareV4 
-through SHA256 hash intelligence matching. Immediate 
-response actions were taken including network containment 
-and credential disabling to prevent lateral movement and 
-further compromise. The incident was escalated to L2 for 
-full forensic investigation and recovery.
-
-**Final Verdict: 🔴 TRUE POSITIVE — ChaosRansomwareV4 
-Ransomware | Contained & Escalated**
-
----
-
-## Skills Demonstrated
-
-- Endpoint alert triage — Critical severity
-- SHA256 hash analysis and threat intelligence
-- IOC identification and validation  
-- Malware family identification — ChaosRansomwareV4
-- On-demand scan result interpretation
-- Network containment execution
-- Credential disabling as mitigation
-- MITRE ATT&CK mapping
-- Incident escalation procedure
-
----
-
-## Connect
-
-- LinkedIn: linkedin.com/in/dineshtl
-- GitHub: github.com/Dineshtl
-- Email: dineshtl821@gmail.com
+🛠️ Tools Used
+Splunk Enterprise Security (ES)
+SPL (Search Processing Language)
+Splunk Incident Review Dashboard
+Correlation Searches
+📫 Connect With Me
+LinkedIn: linkedin.com/in/dineshtl
+Email: dineshtl821@gmail.com
+GitHub: github.com/Dineshtl# Splunk-SPL-Queries SPL queries from SOC internship
